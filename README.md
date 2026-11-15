@@ -10,10 +10,15 @@ Per-model prompt blocks for [DeepSeek Harness](https://github.com/deepseek-ai/de
 ## 安装
 
 ```bash
-dsh plugin add dsh-model-prompts
+dsh plugin add github:nmapleaf/dsh-model-prompts
 ```
 
 插件通过 `cordis.patch.yml` 自动挂载，装完即生效。想临时关掉就把配置里的 `enabled` 设为 `false`。
+
+> **尚未发布到 npm**：`dsh plugin add dsh-model-prompts` 会 404，请用上面的 GitHub 源安装。
+> 本地开发可以指向源码目录：`dsh plugin add /path/to/dsh-model-prompts`（pnpm 会建 `link:` 依赖，
+> 改代码不用重装；但每次 `pnpm add` 都可能把 `@deepseek-ai/schemastery` 提到 profile 根目录，
+> 装完记得确认共享层软链还在）。
 
 ## 配置
 
