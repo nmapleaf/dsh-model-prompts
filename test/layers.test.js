@@ -1,17 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clearBodyCache, collect } from "../lib/layers.js";
+import { collect } from "../lib/layers.js";
 import { normalizeSettings } from "../lib/settings.js";
 
 function sandbox() {
 	const root = mkdtempSync(join(tmpdir(), "model-prompts-"));
 	const globalRoot = join(root, "global");
 	mkdirSync(globalRoot, { recursive: true });
-	clearBodyCache();
 	return { root, globalRoot };
 }
 
@@ -43,8 +42,17 @@ test("loads every json file in basename order and ignores the rest", () => {
 	assert.deepEqual(collected.diagnostics, []);
 });
 
-test("invalid JSON and bad shapes become diagnostics, never throws", () => {
-	const { globalRoot } = sandbox();
+test("a global config symlinked out of the layer root is refused", () => {
+	const { root, globalRoot } = sandbox();
+	writeJson(root, "outside.json", { prompts: [{ models: ["*"], text: "leaked" }] });
+	symlinkSync(join(root, "outside.json"), join(globalRoot, "linked.json"));
+
+	const collected = collect(normalizeSettings({ globalRoot }), undefined);
+	assert.equal(collected.entries.length, 0);
+	assert.match(collected.diagnostics[0].message, /escapes/);
+});
+
+test("invalid JSON and bad shapes become diagnostics, never throws", () => {	const { globalRoot } = sandbox();
 	writeJson(globalRoot, "broken.json", "{ not json");
 	const collected = collect(normalizeSettings({ globalRoot }), undefined);
 	assert.equal(collected.entries.length, 0);
@@ -197,4 +205,73 @@ test("an edited body is re-read on the next collect", () => {
 	assert.equal(collect(settings, undefined).entries[0].body, "before");
 	writeFileSync(join(globalRoot, "one.md"), "after, longer", "utf8");
 	assert.equal(collect(settings, undefined).entries[0].body, "after, longer");
+});
+
+test("a same-size rewrite is still re-read", () => {
+	const { globalRoot } = sandbox();
+	writeFileSync(join(globalRoot, "one.md"), "aaaa", "utf8");
+	writeJson(globalRoot, "c.json", { prompts: [{ models: ["*"], file: "one.md" }] });
+	const settings = normalizeSettings({ globalRoot });
+
+	assert.equal(collect(settings, undefined).entries[0].body, "aaaa");
+	writeFileSync(join(globalRoot, "one.md"), "bbbb", "utf8");
+	assert.equal(collect(settings, undefined).entries[0].body, "bbbb");
+});
+
+test("a layer may repeat a body for a different model", () => {
+	const { globalRoot } = sandbox();
+	writeJson(globalRoot, "c.json", {
+		prompts: [
+			{ models: ["anthropic/*"], text: "shared" },
+			{ models: ["openai/*"], text: "shared" },
+		],
+	});
+
+	const collected = collect(normalizeSettings({ globalRoot }), undefined);
+	assert.deepEqual(collected.entries.map((entry) => entry.body), ["shared", "shared"]);
+	assert.deepEqual(collected.diagnostics, []);
+});
+
+test("once the budget is exhausted later entries are dropped", () => {
+	const { globalRoot } = sandbox();
+	writeFileSync(join(globalRoot, "big.md"), "a".repeat(1100), "utf8");
+	writeJson(globalRoot, "c.json", {
+		prompts: [
+			{ models: ["*"], file: "big.md" },
+			{ models: ["*"], text: "b".repeat(1100) },
+			{ models: ["*"], text: "small" },
+		],
+	});
+
+	const collected = collect(normalizeSettings({ globalRoot, maxBytes: 2000, maxTotalBytes: 2000 }), undefined);
+	assert.equal(collected.entries.length, 1);
+	assert.match(collected.diagnostics.at(-1).message, /body budget exhausted/);
+});
+
+test("an unreadable file is a diagnostic", (t) => {
+	if (typeof process.getuid === "function" && process.getuid() === 0) {
+		t.skip("root ignores file permissions");
+		return;
+	}
+	const { globalRoot } = sandbox();
+	const locked = join(globalRoot, "locked.md");
+	writeFileSync(locked, "secret", "utf8");
+	writeJson(globalRoot, "c.json", { prompts: [{ models: ["*"], file: "locked.md" }] });
+	chmodSync(locked, 0o000);
+
+	const collected = collect(normalizeSettings({ globalRoot }), undefined);
+	chmodSync(locked, 0o600);
+	assert.equal(collected.entries.length, 0);
+	assert.match(collected.diagnostics[0].message, /cannot read file \(EACCES\)/);
+});
+
+test("the project config file itself may not point outside the project", () => {	const { root, globalRoot } = sandbox();
+	const project = join(root, "project");
+	mkdirSync(join(project, ".dsh"), { recursive: true });
+	writeJson(root, "outside.json", { prompts: [{ models: ["*"], text: "leaked" }] });
+	symlinkSync(join(root, "outside.json"), join(project, ".dsh", "model-prompts.json"));
+
+	const collected = collect(normalizeSettings({ globalRoot, allowProject: true }), project);
+	assert.equal(collected.entries.length, 0);
+	assert.match(collected.diagnostics[0].message, /escapes/);
 });

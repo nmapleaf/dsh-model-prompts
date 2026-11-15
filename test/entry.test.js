@@ -9,7 +9,8 @@ test("accepts a minimal text entry", () => {
 	assert.equal(result.ok, true);
 	assert.equal(result.value.text, "be brief");
 	assert.equal(result.value.position, "append");
-	assert.equal(identityOf(result.value), "text:be brief");
+	assert.equal(identityOf(result.value).startsWith("text:"), true);
+	assert.equal(identityOf(result.value).endsWith(":be brief"), true);
 });
 
 test("trims the body and rejects an empty one", () => {
@@ -55,7 +56,8 @@ test("accepts a file entry and records its identity", () => {
 	const result = validateEntry({ models: ["*"], file: " prompts/one.md " }, { where });
 	assert.equal(result.ok, true);
 	assert.equal(result.value.file, "prompts/one.md");
-	assert.equal(identityOf(result.value), "file:prompts/one.md");
+	assert.equal(identityOf(result.value).startsWith("file:"), true);
+	assert.equal(identityOf(result.value).endsWith(":prompts/one.md"), true);
 });
 
 test("rejects unknown fields, bad positions and bad when clauses", () => {
@@ -66,6 +68,9 @@ test("rejects unknown fields, bad positions and bad when clauses", () => {
 	const badPosition = validateEntry({ models: ["*"], text: "x", position: "middle" }, { where });
 	assert.equal(badPosition.ok, false);
 	assert.match(badPosition.reason.message, /position/);
+
+	const nullPosition = validateEntry({ models: ["*"], text: "x", position: null }, { where });
+	assert.equal(nullPosition.ok, false);
 
 	const badWhen = validateEntry({ models: ["*"], text: "x", when: { mode: "tui" } }, { where });
 	assert.equal(badWhen.ok, false);

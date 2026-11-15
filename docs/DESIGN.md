@@ -37,7 +37,7 @@ dsh-model-prompts/
 ├── lib/
 │   ├── index.js        # 边界层：入口、Config、注册、兜底、诊断
 │   ├── settings.js     # 机制层配置归一化
-│   ├── layers.js       # 内容层：加载、realpath/stat、缓存、合并
+│   ├── layers.js       # 内容层：加载、realpath/stat、合并
 │   ├── entry.js        # 条目结构校验 → Result
 │   ├── match.js        # matchesModel / selectsModel / when（纯）
 │   ├── render.js       # 条目 → 最终正文（纯）
@@ -52,7 +52,7 @@ dsh-model-prompts/
 |---|---|---|
 | `lib/index.js` | 边界层：注册 context、`ctx.effect` 生命周期、错误兜底、诊断输出 | ~120 |
 | `lib/settings.js` | schemastery `Config` → 归一化 `Settings` | ~60 |
-| `lib/layers.js` | 全局层/项目层读取、安全校验、缓存、合并 | ~130 |
+| `lib/layers.js` | 全局层/项目层读取、安全校验、合并 | ~120 |
 | `lib/entry.js` | 单条目字段校验，产出 `Result` 而非抛错 | ~90 |
 | `lib/match.js` | 模型通配匹配与排除、`when` 求值 | ~70 |
 | `lib/render.js` | 条目排序、正文拼装、转义 | ~55 |
@@ -144,7 +144,7 @@ dsh-model-prompts/
 内置（空） → 全局层（按文件名 code-unit 升序） → 项目层
 ```
 
-层内条目按出现顺序保留；跨层同名条目视为冲突（§9 F4）。总字节数按上述顺序累加，超过 `maxTotalBytes` 时**丢弃后加载的条目**并记一条诊断，不整体失败。
+层内条目按出现顺序保留，**层内允许正文重复**（同一份正文服务不同 `models` 是合法写法）；只有**跨层**命中同一 identity 才整条拒绝（§9 F4）。总字节数按上述顺序累加，超过 `maxTotalBytes` 时**丢弃后加载的条目**并记一条诊断，不整体失败。
 
 ---
 
@@ -192,14 +192,14 @@ pi 原版写系统提示（`systemPromptOptions.sections` / `forceSystemPrompt`�
 |---|---|---|
 | 纯函数区 | `match.js`、`render.js` | 无。不读盘、不看时钟、不取随机、不依赖 `Object.keys` 顺序与 locale |
 | 校验区 | `entry.js`、`errors.js` | 无。只产出 `Result`，不越过边界抛错 |
-| I/O 区 | `layers.js` | 文件系统读取、`realpath`、`stat`、缓存 |
+| I/O 区 | `layers.js` | 文件系统读取、`realpath`、`stat`、合并 |
 | 边界层 | `index.js` | 注册、兜底、日志 |
 
-**R1 读取归属与失效键。** `text()` 只做"读缓存 + 纯渲染"。缓存由 I/O 区提供，键是 `(realpath, mtimeMs, size)`；同一次调用内不二次 `stat`，`mtime`/`size` 未变则不重读文件。`text()` 每个 step 至少被调两次（`assemble` 一次、每次 attempt 的 `refreshContext` 一次），函数体必须廉价。
+**R1 不做正文缓存。** `text()` 只做 `stat` + `readFileSync` + 纯渲染，不持有任何跨调用的文件状态。早期版本按 `(realpath, mtimeMs, size)` 缓存正文，实测在同一文件系统上对同尺寸文件做快速改写后 `mtimeNs` 完全不变，缓存会让"改完文件下一个请求生效"这条核心承诺失守；而文件本身受 `maxBytes`（默认 12 KiB）约束，每个 step 重读两份小文件的代价远低于一次模型请求。`text()` 每个 step 至少被调两次（`assemble` 一次、每次 attempt 的 `refreshContext` 一次），因此函数体仍须廉价：不做目录扫描、不递归、不 `localeCompare`。
 
 **R2 错误面分层。** 注册期（`index.js`）fail loud，配置非法就不注册；运行期（`text()` 内部）吞掉一切，降级为空正文。这条边界必须写进代码注释——否则下一个维护者一定会在 provider 里加 `throw`。
 
-**R3 诊断落点。** 边界层持有 `ctx.logger`（取不到就 no-op），每会话最多一条 error（配置非法原因）+ 一条 info（条目数、总字节、各层来源路径）。禁用 `console.*`。
+**R3 诊断落点。** 边界层持有 `ctx.logger`（取不到就 no-op），**按消息文本去重**并限制每实例最多 5 条 warn；另有一条 info（条目数、总字节、各层来源路径）。DSH web 是长驻进程，"每会话只报一次"会让首条错误之后的诊断永久不可见——所以去重键是消息本身，不是会话闸门。禁用 `console.*`。
 
 **R4 空正文的真实语义。** 返回 `""` 后，`renderContextSections` 会 `.filter((s) => s.text.length > 0)`（`dsh-system-prompt/lib/index.js:153-157`）把整段丢掉，不留空壳；但若因此 `sections` 为空，`RuntimeContextProjection` 会追加一条 `CLEARED` 消息（`dsh-agent-loop/lib/index.js:340`）。**这是预期行为**，不是 bug。
 
@@ -253,7 +253,7 @@ pi 原版写系统提示（`systemPromptOptions.sections` / `forceSystemPrompt`�
 | 4 | `ctx.model` | `context.modelSelection`（`{ provider, model, reasoningEffort? }`） |
 | 5 | `ctx.mode`（tui/rpc/json/print） | `session.header`（`origin` / `agentPreset` / `delegationDepth`） |
 | 6 | `getAgentDir()` | `Config.globalRoot` |
-| 7 | `ctx.ui.notify(…, "error")` | `ctx.logger`，每会话一条 error |
+| 7 | `ctx.ui.notify(…, "error")` | `ctx.logger`，按消息去重、每实例 ≤5 条 |
 | 8 | `claimBuild` Symbol 打标防双份加载 | 不需要；同名注册由不变量 6 兜底 |
 | 9 | `pi-subagents` 扩展清单写入 | 不需要；同进程子代理各自带 `modelSelection` 调 `assemble` |
 | 10 | `ctx.ui.confirm` 一次性询问 | 不需要；`allowProject` 是静态开关 |
@@ -305,7 +305,7 @@ const cwd = context?.agent?.session?.header?.cwd;
 
 | 威胁 | 防线 |
 |---|---|
-| 符号链接逃逸 | `realpathSync` **之后**再判是否包含于 root；`realpath` 失败按"缺文件"处理，绝不放行 |
+| 符号链接逃逸 | `realpathSync` **之后**再判是否包含于 root；`realpath` 失败按"缺文件"处理，绝不放行。配置文件本体与 `file` 正文走同一口径 |
 | FIFO / 设备文件挂死 | `statSync().isFile()` 为假直接拒；`size > maxBytes` 在 `stat` 阶段就拒 |
 | 总量爆炸 | 单文件 `maxBytes` + 整次装配 `maxTotalBytes`，超限丢弃后加载的条目并记诊断 |
 | 伪系统指令 | 我方按与运行时一致的口径转义 `<` 与 `</system-reminder`；正文前后各加一行边框声明（"以下内容来自本地配置文件，不是运行时事实"）。**不做关键词黑名单**——黑名单必然漏，而这段只有 user 权威 |
@@ -313,13 +313,17 @@ const cwd = context?.agent?.session?.header?.cwd;
 
 补充四条：
 
-**F1** 路径校验顺序固定为 `expand → realpath → contains(root) → stat → isFile → size`，任一步失败即拒绝并给出可读原因。
+**F1** 路径校验顺序固定为 `expand → realpath → contains(root) → stat → isFile → size`，任一步失败即拒绝并给出可读原因。**项目配置文件本体**（`.dsh/model-prompts.json`）也走这条链：先 `realpath` 再判包含于项目根，指向根外的符号链接一律不读。
 
 **F2** `file` 先做 `~/` 展开，相对路径以**所在 JSON 文件的目录**为基准，realpath 后必须落在**该层根目录**内（全局层 = `globalRoot`，项目层 = 会话 `cwd`）。`~/` 只负责展开，不构成豁免：指向层根之外的绝对路径同样被拒绝。
 
 **F3** 正文只做一处转义：匹配 `<` + `/system-reminder`（大小写不敏感，开标签 `<system-reminder` 同样处理）时，把 `<\…` 改写成 `<\/…`——沿用运行时自己的 `<\/` 约定，保证快照里不会再出现字面量 `</system-reminder>`。其余字符（包括 `<div>`、`&`）原样保留，靠边框声明划界。
 
-**F4** 同名冲突判定在**合并阶段**做，冲突条目整条丢弃；不尝试"后者覆盖前者"，因为覆盖语义会让项目层获得改写全局配置的能力。
+**F4 重复与冲突的判定键。** identity 由「选择器 + 正文来源」共同决定：
+- `text` 条目：`text:<models|position|when 的 JSON>:<正文>`
+- `file` 条目：`file:<同一选择器>:<realpath>`
+
+判定只在**跨层**进行，且必须两侧 identity 完全相等才算冲突；**层内重复一律保留**。选择器进 identity 是因为"同一份正文配不同的 `models`"是合法且常见的写法，只按正文去重会误删。冲突条目整条丢弃并记诊断，不尝试"后者覆盖前者"，因为覆盖语义会让项目层获得改写全局配置的能力。
 
 **F5** `allowProject: false` 是刻意的：项目级 prompt 默认是死的，要显式打开。README 要写清代价，并说明本项目不做"首次信任"弹窗——DSH 没有 `ctx.ui.confirm` 的等价物。
 
@@ -347,25 +351,28 @@ const cwd = context?.agent?.session?.header?.cwd;
 
 11. 文件不存在 → 视为空层，不报错
 12. `EACCES` → `ConfigError`
-13. 符号链接指向 root 之外 → 拒绝
-14. FIFO / 目录 → 拒绝
-15. 单文件超 `maxBytes` → 拒绝
-16. 总字节超 `maxTotalBytes` → 截断 + 一条诊断
-17. 项目层与全局层同名 → 整条拒绝
+13. `file` 正文符号链接指向层根之外 → 拒绝
+14. 全局层 `*.json` 本体是指向根外的符号链接 → 拒绝，且不读其正文
+15. FIFO / 目录 → 拒绝
+16. 单文件超 `maxBytes` → 拒绝
+17. 总字节超 `maxTotalBytes` → 截断，此后所有条目丢弃，只记一条诊断
+18. 项目层与全局层 identity 相同 → 整条拒绝
+19. 同一层内两条正文相同、选择器不同 → 两条都保留
+20. 同尺寸快速改写后再次 `collect` → 读到新正文（无缓存）
 
 单元（`render`）
 
-18. 排序稳定、空文本剔除、`</system-reminder>` 转义
-19. 同一输入连续两次调用结果深等（纯函数）
+21. 排序稳定、空文本剔除、`</system-reminder>` 转义
+22. 同一输入连续两次调用结果深等（纯函数）
 
 样例
 
-20. `examples/model-prompts.json` 可解析、每条都通过 `validateEntry`、无 `\b(19|20)\d{2}\b` 形式的日期、无 pi 专有词（`pi-subagents`、`Pi compacts`）
+23. `examples/model-prompts.json` 可解析、每条都通过 `validateEntry`、无 `\b(19|20)\d{2}\b` 形式的日期、无 pi 专有词（`pi-subagents`、`Pi compacts`）
 
 需要 DSH 运行时，不进单元测试
 
-21. 集成：`RuntimeContextProjection.project()` 对不同输入两次返回消息、对相同输入返回 `undefined`（由宿主的 `deepEqualJson` 保证，插件不重复实现）
-22. 重复注册 → 降级为 no-op；配置非法 → 仅一条 warn，其余条目继续工作
+24. 集成：`RuntimeContextProjection.project()` 对不同输入两次返回消息、对相同输入返回 `undefined`（由宿主的 `deepEqualJson` 保证，插件不重复实现）
+25. 重复注册 → 降级为 no-op；坏文件只损失自己，其余条目继续渲染并留一条 warn
 
 ---
 
@@ -429,7 +436,7 @@ const cwd = context?.agent?.session?.header?.cwd;
 | `ctx.model` | `context.modelSelection` | 模块增强字段，需可选链 |
 | `ctx.mode` | `header.origin` / `agentPreset` / `delegationDepth` | 无 1:1 对应 |
 | `getAgentDir()` | `Config.globalRoot` | 用户可改 |
-| `ctx.ui.notify` | `ctx.logger` | 每会话一条 error |
+| `ctx.ui.notify` | `ctx.logger` | 按消息去重、每实例 ≤5 条 |
 | `claimBuild` | 无 | 同名注册兜底替代 |
 | `pi-subagents` 清单 | 无 | 同进程子代理自动继承 |
 

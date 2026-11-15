@@ -9,6 +9,8 @@
   },
   "files": [
     "lib",
+    "docs",
+    "examples",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
