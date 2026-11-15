@@ -1,14 +1,21 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collect } from "../lib/layers.js";
 import { normalizeSettings } from "../lib/settings.js";
 
+const temporary = [];
+
+after(() => {
+	for (const dir of temporary) rmSync(dir, { recursive: true, force: true });
+});
+
 function sandbox() {
 	const root = mkdtempSync(join(tmpdir(), "model-prompts-"));
+	temporary.push(root);
 	const globalRoot = join(root, "global");
 	mkdirSync(globalRoot, { recursive: true });
 	return { root, globalRoot };

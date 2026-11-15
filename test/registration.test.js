@@ -1,6 +1,6 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,8 +41,15 @@ function fakeContext() {
 	return { ctx, state };
 }
 
+const temporary = [];
+
+after(() => {
+	for (const dir of temporary) rmSync(dir, { recursive: true, force: true });
+});
+
 function workspace() {
 	const root = mkdtempSync(join(tmpdir(), "model-prompts-reg-"));
+	temporary.push(root);
 	const globalRoot = join(root, "global");
 	mkdirSync(globalRoot, { recursive: true });
 	writeFileSync(join(globalRoot, "a.json"), JSON.stringify({ prompts: [{ models: ["*"], text: "hello" }] }), "utf8");
