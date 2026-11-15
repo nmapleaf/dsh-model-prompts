@@ -29,6 +29,14 @@
     "prompt",
     "system-prompt"
   ],
+  "homepage": "https://github.com/nmapleaf/dsh-model-prompts#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nmapleaf/dsh-model-prompts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nmapleaf/dsh-model-prompts/issues"
+  },
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
