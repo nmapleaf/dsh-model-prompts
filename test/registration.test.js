@@ -72,7 +72,16 @@ test("registers one required, non-interpolated context", async (t) => {
 	assert.equal(spec.interpolate, false);
 	assert.equal(spec.required, true);
 	assert.equal(typeof spec.text, "function");
-	assert.equal(module.Config !== undefined, true);
+	// Schema is a convenience, not a requirement: a `link:`/`file:` install
+	// resolves this module from the source tree, where the profile's
+	// node_modules is not on the lookup path. Config must track availability.
+	let schemaAvailable = true;
+	try {
+		await import("@deepseek-ai/schemastery");
+	} catch {
+		schemaAvailable = false;
+	}
+	assert.equal(module.Config !== undefined, schemaAvailable);
 
 	assert.match(spec.text({ modelSelection: { provider: "deepseek", model: "chat" } }), /hello/);
 	assert.equal(spec.text({}), "");
