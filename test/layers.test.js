@@ -158,6 +158,11 @@ test("the project layer stays off unless allowed", () => {
 	const off = collect(normalizeSettings({ globalRoot }), project);
 	assert.equal(off.entries.length, 0);
 
+	// Without a schema (a `link:` install), a string is not a boolean: "false"
+	// must not open a prompt-injection surface.
+	const stringly = collect(normalizeSettings({ globalRoot, allowProject: "false" }), project);
+	assert.equal(stringly.entries.length, 0);
+
 	const on = collect(normalizeSettings({ globalRoot, allowProject: true }), project);
 	assert.deepEqual(on.entries.map((entry) => entry.body), ["project"]);
 	assert.equal(on.entries[0].layer, "project");
