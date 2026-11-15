@@ -374,6 +374,19 @@ const cwd = context?.agent?.session?.header?.cwd;
 24. 集成：`RuntimeContextProjection.project()` 对不同输入两次返回消息、对相同输入返回 `undefined`（由宿主的 `deepEqualJson` 保证，插件不重复实现）
 25. 重复注册 → 降级为 no-op；坏文件只损失自己，其余条目继续渲染并留一条 warn
 
+### 10.1 实测记录（2026-11-15，dsh 0.2.2-rc.2）
+
+用一个一次性 `headless` profile 做了端到端冒烟，全程不碰在跑的 `web` profile。步骤与观察：
+
+1. `dsh plugin --profile pmp-smoke add <repo>` 后 `--dump-config` 出现 `id: model-prompts` / `name: dsh-model-prompts`，说明 bundle patch 生效。
+2. `dsh --profile pmp-smoke --help` 退出码 0，stderr 无输出：插件挂载、注册均无错误。
+3. 用 `--patch` 把 `globalRoot` 指到 `/tmp/pmp-smoke-prompts`，写入一条 `SMOKE-MARKER` 正文。问模型"暗号是什么"，回答 `SMOKE-OK`；模型思维链引用了边框声明原文，证明整块快照进入了上下文。
+4. 同一 session 连续四轮：首轮注入快照 1（原地正文）；改正文后下一轮注入快照 2，开头是"…It replaces earlier versions of this context…"；再跑一轮不改文件，**没有**第三份快照。
+
+结论：`user/message` 里 7 条消息、仅 2 条是 runtime-context 快照——"改文件下个请求生效"与"文本不变不重复追加"两条承诺都在真实运行时兑现；第 25 条的降级路径由 `test/registration.test.js` 覆盖。
+
+注：headless profile 起手读不到 `~/.dsh/.credentials.yaml` 里的 key（web 由 credentials 服务注入），实测时是临时从该文件取值注入环境变量完成的。这属于 profile 凭据注入的差异，与本插件无关。
+
 ---
 
 ## 11. 样例维护
@@ -398,7 +411,7 @@ const cwd = context?.agent?.session?.header?.cwd;
 |---|---|---|
 | **M1 骨架** | 包结构、`cordis.patch.yml`、`Config`、注册一条空 context | 装上后日志出现一条 info；`dsh` 启动无报错；关闭 `enabled` 后不再注册 |
 | **M2 内容** | `entry` / `match` / `layers` / `render` + 校验 + §9 安全加固 | 测试 1–20 全绿；故意放入符号链接与 FIFO 均被拒 |
-| **M3 打磨** | 诊断文案、热更新、README、样例、发布前只读 review | 测试 21–22 绿；README 写明"下一个请求生效"；review 无阻塞项 |
+| **M3 打磨** | 诊断文案、热更新、README、样例、发布前只读 review | 测试 21–22 绿；README 写明"下一个请求生效"；review 无阻塞项；真实 dsh 冒烟见 §10.1 |
 
 ---
 
