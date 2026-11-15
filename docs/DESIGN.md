@@ -315,9 +315,9 @@ const cwd = context?.agent?.session?.header?.cwd;
 
 **F1** 路径校验顺序固定为 `expand → realpath → contains(root) → stat → isFile → size`，任一步失败即拒绝并给出可读原因。
 
-**F2** `file` 的 `~/` 展开只对全局层开放；项目层的 `file` 必须落在项目目录内（realpath 后判定）。
+**F2** `file` 先做 `~/` 展开，相对路径以**所在 JSON 文件的目录**为基准，realpath 后必须落在**该层根目录**内（全局层 = `globalRoot`，项目层 = 会话 `cwd`）。`~/` 只负责展开，不构成豁免：指向层根之外的绝对路径同样被拒绝。
 
-**F3** 正文转义只处理两个目标：`<` → `&lt;`（保守），以及 `</system-reminder` 的大小写变体。其余内容原样保留，靠边框声明划界。
+**F3** 正文只做一处转义：匹配 `<` + `/system-reminder`（大小写不敏感，开标签 `<system-reminder` 同样处理）时，把 `<\…` 改写成 `<\/…`——沿用运行时自己的 `<\/` 约定，保证快照里不会再出现字面量 `</system-reminder>`。其余字符（包括 `<div>`、`&`）原样保留，靠边框声明划界。
 
 **F4** 同名冲突判定在**合并阶段**做，冲突条目整条丢弃；不尝试"后者覆盖前者"，因为覆盖语义会让项目层获得改写全局配置的能力。
 
@@ -357,12 +357,15 @@ const cwd = context?.agent?.session?.header?.cwd;
 
 18. 排序稳定、空文本剔除、`</system-reminder>` 转义
 19. 同一输入连续两次调用结果深等（纯函数）
-20. 集成：两次不同输入 → `project()` 两次返回；相同输入 → `undefined`
 
-样例与注册
+样例
 
-21. `examples/model-prompts.json` 可解析、无 `\b(19|20)\d{2}\b` 形式的日期、无 pi 专有词（`pi-subagents`、`Pi compacts`）
-22. 重复注册 → 降级为 no-op；配置非法 → 不注册且仅一条 error
+20. `examples/model-prompts.json` 可解析、每条都通过 `validateEntry`、无 `\b(19|20)\d{2}\b` 形式的日期、无 pi 专有词（`pi-subagents`、`Pi compacts`）
+
+需要 DSH 运行时，不进单元测试
+
+21. 集成：`RuntimeContextProjection.project()` 对不同输入两次返回消息、对相同输入返回 `undefined`（由宿主的 `deepEqualJson` 保证，插件不重复实现）
+22. 重复注册 → 降级为 no-op；配置非法 → 仅一条 warn，其余条目继续工作
 
 ---
 
