@@ -153,12 +153,26 @@ test("a project file must stay inside the project root", () => {
 	const project = join(root, "project");
 	mkdirSync(join(project, ".dsh"), { recursive: true });
 	writeFileSync(join(root, "outside.md"), "secret", "utf8");
-	symlinkSync(join(root, "outside.md"), join(project, "link.md"));
+	symlinkSync(join(root, "outside.md"), join(project, ".dsh", "link.md"));
 	writeJson(join(project, ".dsh"), "model-prompts.json", { prompts: [{ models: ["*"], file: "link.md" }] });
 
 	const collected = collect(normalizeSettings({ globalRoot, allowProject: true }), project);
 	assert.equal(collected.entries.length, 0);
 	assert.match(collected.diagnostics[0].message, /escapes/);
+});
+
+test("project file references resolve against the config file's directory", () => {
+	const { root, globalRoot } = sandbox();
+	const project = join(root, "project");
+	// The layer root is the project itself, but `file` is relative to `.dsh/`.
+	mkdirSync(join(project, "prompts"), { recursive: true });
+	writeFileSync(join(project, "prompts", "wrong.md"), "wrong", "utf8");
+	mkdirSync(join(project, ".dsh", "prompts"), { recursive: true });
+	writeFileSync(join(project, ".dsh", "prompts", "right.md"), "right", "utf8");
+	writeJson(join(project, ".dsh"), "model-prompts.json", { prompts: [{ models: ["*"], file: "prompts/right.md" }] });
+
+	const collected = collect(normalizeSettings({ globalRoot, allowProject: true }), project);
+	assert.deepEqual(collected.entries.map((entry) => entry.body), ["right"]);
 });
 
 test("a project file may only add, not shadow", () => {
