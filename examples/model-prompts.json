@@ -1,0 +1,20 @@
+{
+  "prompts": [
+    {
+      "models": ["*"],
+      "position": "append",
+      "text": "Treat this block as a constraint on the current run, not as a suggestion.\n\n- Report what you actually ran and what actually happened. Do not describe an intended action as if it had occurred.\n- If a check cannot run in this environment, say so once and continue with the closest available evidence.\n- Read a file before editing it; do not re-read a file you just edited unless the outcome is in doubt."
+    },
+    {
+      "models": ["anthropic/*", "!anthropic/claude-3*"],
+      "position": "append",
+      "text": "State the plan before a multi-step change, then execute it. Do not narrate abandoned attempts; summarize the final approach and how it was verified."
+    },
+    {
+      "models": ["*"],
+      "when": { "origin": "subagent" },
+      "position": "append",
+      "text": "You were delegated a bounded task. Finish it and report the result; do not expand scope or ask for confirmation unless you are blocked."
+    }
+  ]
+}
