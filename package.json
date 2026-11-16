@@ -1,6 +1,6 @@
 {
   "name": "dsh-model-prompts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Per-model prompt blocks for DeepSeek Harness, injected as a runtime context snapshot that is re-appended only when its rendered text changes.",
   "type": "module",
   "main": "lib/index.js",
