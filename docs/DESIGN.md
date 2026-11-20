@@ -73,12 +73,14 @@ dsh-model-prompts/
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh": ">=0.2.2-rc.1 <0.2.3-0",
-    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.2",
+    "@deepseek-ai/dsh": ">=0.2.2-rc.2 <0.2.3-0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.2 <0.2.3-0",
     "@deepseek-ai/schemastery": "~3.19.0"
   }
 }
 ```
+
+`@deepseek-ai/dsh-system-prompt` 与 `@deepseek-ai/dsh` 都用区间而不是精确版本：精确钉 `0.2.2-rc.2` 会让 0.2.2-rc.3 及以上的宿主把插件判为不兼容（desktop 版即因此装不上）。下界保持 `0.2.2-rc.2`——那是集成实测跑过的版本，rc.1 没有验证过；上界锁在 `<0.2.3-0`。已核对 `0.2.2-rc.5` 的 `lib/types/index.d.ts:72,275`，`PromptContext` / `context()` 签名与 rc.2 逐行一致，所以 rc.2–rc.5 共用同一区间是安全的。
 
 `cordis.patch.yml` 只有一行：
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-model-prompts",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Per-model prompt blocks for DeepSeek Harness, injected as a runtime context snapshot that is re-appended only when its rendered text changes.",
   "type": "module",
   "main": "lib/index.js",
@@ -40,8 +40,8 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh": ">=0.2.2-rc.1 <0.2.3-0",
-    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.2",
+    "@deepseek-ai/dsh": ">=0.2.2-rc.2 <0.2.3-0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.2 <0.2.3-0",
     "@deepseek-ai/schemastery": "~3.19.0"
   }
 }
